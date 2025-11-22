@@ -266,6 +266,8 @@ class BaseWeatherCommand(BaseCommand):
         windpower = data.get('windpower')
         humidity = data.get('humidity')
         reporttime = data.get('reporttime')
+        reporttime = datetime.strptime(reporttime, "%Y-%m-%d %H:%M:%S")
+        reporttime = reporttime.strftime("%Y-%m-%d")
         result = f"""🌆{province}{city}实时天气
 ==============
 🌤️天气:{weather}
