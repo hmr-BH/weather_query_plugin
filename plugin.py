@@ -176,6 +176,7 @@ class GetWeatherInfo:
                                 "nightwind": nightwind,
                                 "daypower": daypower,
                                 "nightpower": nightpower,
+                                "date": date,
                             }
                         return True , info
                     elif str(status) == "0":
@@ -361,9 +362,12 @@ class ForecastWeatherCommand(BaseCommand):
         nightwind = weather_info.get("nightwind")
         daypower = weather_info.get("daypower")
         nightpower = weather_info.get("nightpower")
+        reporttime = datetime.strptime(reporttime, "%Y-%m-%d %H:%M:%S")
+        reporttime = reporttime.strftime("%Y-%m-%d")
+        date = weather_info.get("date")
         result = f"""🌆{province}{city}天气预报
 ==============
-📅日期:{reporttime}
+📅日期:{date}
 ☀️日间天气:{dayweather}
 🌡️日间气温:{daytemp}℃
 💨日间风向:{daywind}
@@ -373,6 +377,8 @@ class ForecastWeatherCommand(BaseCommand):
 🌡️夜间气温:{nighttemp}℃
 💨夜间风向:{nightwind}
 🌀夜间风速:{nightpower}级
+-----------------------
+📅报告日期:{reporttime}
 ==============
 """.strip()
         return result
