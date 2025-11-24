@@ -53,6 +53,9 @@ class GetWeatherInfo:
                     status = result["status"]
                     if str(status) == "1":
                         return True , str(result['geocodes'][0]['adcode'])
+                    elif result['info'] == 'ENGINE_RESPONSE_DATA_ERROR':
+                        logger.error(f"错误的参数，'{location}'可能不是一个有效的城市名")
+                        return False, f"错误的参数，'{location}'可能不是一个有效的城市名"
                     elif result["info"] != 'OK':
                         logger.error(f"adcode码查询失败，失败原因:{result['info']}")
                         return False , f"adcode码查询失败，失败原因:{result['info']}"
@@ -87,6 +90,8 @@ class GetWeatherInfo:
                     result = await response.json()
                     status = result["status"]
                     if str(status) == "1":
+                        if not result.get("lives")[0]:
+                            return False, "暂无天气信息"
                         province = result.get("lives",[{}])[0].get("province")
                         city = result.get("lives",[{}])[0].get("city")
                         adcode = result.get("lives",[{}])[0].get("adcode")
@@ -147,6 +152,8 @@ class GetWeatherInfo:
                     status = result.get("status", '0')
                     if str(status) == "1":
                         casts = result.get("forecasts", [{}])[0].get("casts")
+                        if not casts:
+                            return False, "暂无天气信息"
                         city = result.get("forecasts", [{}])[0].get("city")
                         adcode = result.get("forecasts", [{}])[0].get("adcode")
                         province = result.get("forecasts", [{}])[0].get("province")
@@ -190,6 +197,8 @@ class GetWeatherInfo:
             return False , f"天气信息获取失败:{str(e)}"
 
 
+
+
 class BaseWeatherCommand(BaseCommand):
     command_name = "base_weather_command"
     command_description = "这是一个实时天气查询命令，用于查询实时天气"
@@ -203,15 +212,11 @@ class BaseWeatherCommand(BaseCommand):
         weather_url = self.get_config("weather.weather_url")
         key = self.get_config("weather.api_key")
         #验证location数据，确保为中文城市名
-        try:
-            pattern = r'^[\u4e00-\u9fa5]+$'
-            if not re.match(pattern, location):
-                raise ValueError("城市名为非汉字")
-        except ValueError as e:
-            await self.send_text(str(e))
-            logger.error(str(e))
-            return False, str(e), True
-
+        flag , result = self.verify_data(location)
+        if not flag:
+            await self.send_text(f"'{location}'不是有效城市")
+            logger.error(f"'{location}'不是有效城市")
+            return False,f"'{location}'不是有效城市", True
         #获取目标城市adcode值
         weather_info = GetWeatherInfo(adcode_url, weather_url, key)
         flag , result = await weather_info.get_location_adcode(location)
@@ -278,6 +283,17 @@ class BaseWeatherCommand(BaseCommand):
 🕒报告时间:{reporttime}
 ==============""".strip()
         return result
+
+    def verify_data(self, city) -> Tuple[bool, str]:
+        # 验证location数据，确保为中文城市名
+        try:
+            pattern = r'^[\u4e00-\u9fa5]+$'
+            if not re.match(pattern, city):
+                raise ValueError("城市名为非汉字")
+            else:
+                return True, city
+        except ValueError as e:
+            return False, str(e)
 
 
 class ForecastWeatherCommand(BaseCommand):
@@ -367,7 +383,6 @@ class ForecastWeatherCommand(BaseCommand):
         reporttime = datetime.strptime(reporttime, "%Y-%m-%d %H:%M:%S")
         reporttime = reporttime.strftime("%Y-%m-%d")
         date = weather_info.get("date")
-        delta_temp = abs(int(daytemp) - int(nighttemp))
         result = f"""🌆{province}{city}天气预报
 ==============
 📅日期:{date}
@@ -381,7 +396,6 @@ class ForecastWeatherCommand(BaseCommand):
 💨夜间风向:{nightwind}
 🌀夜间风速:{nightpower}级
 -----------------------
-🔥❄️温差:{delta_temp}℃
 📅报告日期:{reporttime}
 ==============
 """.strip()
