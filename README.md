@@ -55,6 +55,17 @@ adcode_url = "https://restapi.amap.com/v3/geocode/geo"
 /weather <city>  #查询指定城市的实时天气信息
 /weather <city> <date>  #查询指定城市某日的天气预报
 ```
+示例：
+`/weather <city>`
+
+<img src="./images/weather-example.png" alt="示例" width="350" height="200">
+<img src="./images/weather-example-all.png" alt="示例" width="350" height="200">
+<img src="./images/weather-forecast-example.png" alt="示例" width="350" height="200">
+
+`/weather <city> <date>`
+
+
+
 注⚠️:
 * city值填写顺序为“国家、省份、城市、区县”，一般情况下只输入某某市或某某区即可，遇到重名城市加上某某省即可
 * 日期<date>的格式为YYYY-MM-DD,例如2025-11-22
