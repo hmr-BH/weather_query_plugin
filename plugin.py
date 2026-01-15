@@ -17,7 +17,7 @@ import re
 from datetime import datetime, timedelta
 from typing import List, Type, Union, Dict, Any, Tuple, Optional
 import aiohttp
-from src.plugin_system import *
+from src.plugin_system import get_logger,chat_api,BaseCommand,register_plugin,BasePlugin,ConfigField,ComponentInfo
 
 logger = get_logger("weather_query_plugin")
 
