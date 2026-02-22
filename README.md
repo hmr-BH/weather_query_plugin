@@ -3,7 +3,7 @@
 作者编程初学不久，这是第一次尝试为maimai编写插件，也是第一次尝试为项目贡献插件。
 代码很粗糙捏，还在进一步学习。如有任何疑问或建议请随时联系作者（qq:2649366321）
 
-让maimai能够查询指定城市的实时天气或预报天气 
+让maimai能够查询指定城市的实时天气或预报天气，**支持自然语言交互**，例如“麦麦来查一下北京明天的天气”。
 
 ## ⚠️ 重要注意事项
 * 本插件基于高德天气api开发，需要用户自行申请高德天气api的申请 【Web服务API】密钥（Key），详见高德地图api官方文档:https://lbs.amap.com/api/webservice/create-project-and-key
@@ -32,7 +32,7 @@ pip install aiohttp
 name = "weather_query_plugin"
 
 # 插件版本
-version = "1.0.0"
+version = "1.1.0"
 
 # 是否启用本插件
 enabled = true
@@ -50,25 +50,33 @@ weather_url = "https://restapi.amap.com/v3/weather/weatherInfo"
 adcode_url = "https://restapi.amap.com/v3/geocode/geo"
 ```
 ## 使用方法:
-命令列表：
+### 1. 自然语言交互（推荐）
+现在你可以直接用自然语言让麦麦查询天气，例如：
+- “麦麦来查一下北京今天的天气”
+- “上海明天会下雨吗？”
+- “深圳后天天气怎么样”
+- “查一下广州昨天天气”（昨天可能超出预报范围，会提示）
+
+麦麦会自动识别城市和日期（支持今天、明天、后天、昨天、前天以及YYYY-MM-DD格式），并返回对应的天气信息。
+
+### 2. 命令列表（兼容原有方式）
 ```
 /weather <city>  #查询指定城市的实时天气信息
 /weather <city> <date>  #查询指定城市某日的天气预报
 ```
+
 示例：
-`/weather <city>`
+`/weather 北京`
 
 <img src="./images/weather-example.png" alt="示例" width="350" height="200">
 <img src="./images/weather-example-all.png" alt="示例" width="350" height="200">
 
-`/weather <city> <date>`
+`/weather 上海 2025-11-22`
 
 <img src="./images/weather-forecast-example.png" alt="示例" width="400" height="300">
 
-
-
 注⚠️:
 * city值填写顺序为“国家、省份、城市、区县”，一般情况下只输入某某市或某某区即可，遇到重名城市加上某某省即可
-* 日期<date>的格式为YYYY-MM-DD,例如2025-11-22
+* 日期<date>的格式为YYYY-MM-DD，例如2025-11-22；自然语言下也支持今天、明天等相对词
 * 支持查看最多三日后的天气信息，例如在2025-11-22，最多可以查询到2025-11-25日的天气预报
 * 字段city仅支持中文名
