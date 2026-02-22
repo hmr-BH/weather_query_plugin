@@ -26,7 +26,7 @@ from src.plugin_system import (
     get_logger,
     BaseCommand,
     BaseTool,
-    ToolInfo,
+    ToolParamType,
     register_plugin,
     BasePlugin,
     ConfigField,
@@ -37,7 +37,7 @@ logger = get_logger("weather_query_plugin")
 
 
 class GetWeatherInfo:
-    """获取天气数据工具类（保持不变）"""
+    """获取天气数据工具类"""
     def __init__(self, adcode_url: str, weather_url: str, key: str) -> None:
         self.adcode_url = adcode_url
         self.weather_url = weather_url
@@ -200,7 +200,7 @@ def is_date_in_forecast_range(target_date: datetime) -> bool:
     return today <= target_date <= end
 
 
-# ==================== 天气查询核心逻辑（复用） ====================
+# ==================== 天气查询核心逻辑 ====================
 async def query_weather_by_city_and_date(
     city: str,
     date_expr: Optional[str],
@@ -236,7 +236,7 @@ async def query_weather_by_city_and_date(
         return False, str(result)
     adcode = result
 
-    # 5. 如果是今天，可以优先使用实时天气（更即时）
+    # 5. 如果是今天，可以优先使用实时天气
     if date_str == today_str:
         # 尝试实时天气
         flag, result = await weather_helper.fetch_base_weather(adcode)
@@ -330,42 +330,40 @@ def format_forecast_weather(data: dict) -> str:
 =============="""
 
 
-# ==================== Tool 定义 ====================
+# ==================== Tool 定义（修正为符合框架规范）====================
 class WeatherTool(BaseTool):
-    tool_name = "weather_query"
-    tool_description = "查询中国大陆城市的实时天气或未来三天天气预报。支持相对日期：今天、明天、后天，以及具体日期YYYY-MM-DD。"
+    """天气查询工具 - 供AI自然语言调用"""
 
-    @classmethod
-    def get_parameters(cls) -> dict:
-        return {
-            "type": "object",
-            "properties": {
-                "city": {
-                    "type": "string",
-                    "description": "城市中文名，如：北京、上海、广州"
-                },
-                "date": {
-                    "type": "string",
-                    "description": "日期，可选。可以是具体日期（YYYY-MM-DD）或相对词：今天、明天、后天、昨天、前天。默认为今天。注意：昨天、前天可能超出预报范围。"
-                }
-            },
-            "required": ["city"]
-        }
+    name = "weather_query"
+    description = "查询中国大陆城市的实时天气或未来三天天气预报。支持相对日期：今天、明天、后天，以及具体日期YYYY-MM-DD。"
+    parameters = [
+        ("city", ToolParamType.STRING, "城市中文名，如：北京、上海、广州", True, None),
+        ("date", ToolParamType.STRING, "日期，可选。可以是具体日期（YYYY-MM-DD）或相对词：今天、明天、后天、昨天、前天。默认为今天。注意：昨天、前天可能超出预报范围。", False, None)
+    ]
+    available_for_llm = True
 
-    async def execute(self, city: str, date: str = None) -> str:
-        """执行天气查询"""
+    async def execute(self, function_args: dict[str, Any]) -> dict[str, Any]:
+        """执行天气查询，返回结果字典"""
+        city = function_args.get("city")
+        date = function_args.get("date")
+
+        if not city:
+            return {"name": self.name, "content": "❌ 请提供城市名"}
+
         config = {
             "weather.adcode_url": self.get_config("weather.adcode_url"),
             "weather.weather_url": self.get_config("weather.weather_url"),
             "weather.api_key": self.get_config("weather.api_key"),
         }
+
         success, result = await query_weather_by_city_and_date(city, date, config)
         if not success:
-            return f"查询失败：{result}"
-        return result
+            return {"name": self.name, "content": f"❌ {result}"}
+
+        return {"name": self.name, "content": result}
 
 
-# ==================== 命令类（稍作调整以复用查询逻辑） ====================
+# ==================== 命令类（复用查询逻辑） ====================
 class BaseWeatherCommand(BaseCommand):
     command_name = "base_weather_command"
     command_description = "这是一个实时天气查询命令，用于查询实时天气"
@@ -426,7 +424,7 @@ class WeatherQueryPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="weather_query_plugin", description="插件名称"),
-            "version": ConfigField(type=str, default="1.1.0", description="插件版本"),
+            "version": ConfigField(type=str, default="1.2.0", description="插件版本"),  # 版本更新
             "enabled": ConfigField(type=bool, default=True, description="是否启用本插件")
         },
         "weather": {
@@ -440,7 +438,7 @@ class WeatherQueryPlugin(BasePlugin):
         return [
             # 注册Tool供AI自然语言调用
             (WeatherTool.get_tool_info(), WeatherTool),
-            # 保留原有命令（可选）
+            # 保留原有命令
             (BaseWeatherCommand.get_command_info(), BaseWeatherCommand),
             (ForecastWeatherCommand.get_command_info(), ForecastWeatherCommand),
         ]
