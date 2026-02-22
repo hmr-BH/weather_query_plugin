@@ -12,11 +12,11 @@ AI调用方式：
  - “查一下北京今天的天气”
  - “上海明天会下雨吗？”
  - “深圳后天天气怎么样”
+ - “查一下2025年3月1日北京的天气”
 其他：
- # 仅支持中国大陆城市中文名，例如：长沙，北京，南京
- # 支持查询未来四天（含当日）的天气预报信息
- # date格式为YYYY-MM-DD，或相对词：今天、明天、昨天、前天、后天
- # 昨天、前天超出预报范围时会提示错误
+ - 仅支持中国大陆城市中文名，例如：长沙，北京，南京
+ - 支持查询今天、明天、后天以及具体日期YYYY-MM-DD的天气预报信息
+ - 注意：高德API不支持历史天气查询（昨天及以前）
 """
 import re
 from datetime import datetime, timedelta
@@ -164,7 +164,8 @@ class GetWeatherInfo:
 def parse_date_expression(date_expr: Optional[str]) -> Tuple[bool, Optional[datetime], str]:
     """
     解析自然语言日期表达式，返回datetime对象
-    支持格式：今天、明天、昨天、前天、后天、YYYY-MM-DD
+    支持格式：今天、明天、后天、YYYY-MM-DD
+    注意：昨天、前天不支持（API无历史数据）
     返回 (是否成功, datetime对象, 错误信息)
     """
     if not date_expr:
@@ -173,13 +174,11 @@ def parse_date_expression(date_expr: Optional[str]) -> Tuple[bool, Optional[date
     expr = date_expr.strip()
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # 相对词映射
+    # 相对词映射（仅支持未来）
     rel_map = {
         "今天": 0,
         "明天": 1,
         "后天": 2,
-        "昨天": -1,
-        "前天": -2,
     }
     if expr in rel_map:
         target = today + timedelta(days=rel_map[expr])
@@ -190,7 +189,7 @@ def parse_date_expression(date_expr: Optional[str]) -> Tuple[bool, Optional[date
         target = datetime.strptime(expr, "%Y-%m-%d")
         return True, target, ""
     except ValueError:
-        return False, None, f"日期格式无效，请使用 YYYY-MM-DD 或 今天/明天/昨天/前天/后天"
+        return False, None, f"日期格式无效，请使用 YYYY-MM-DD 或 今天/明天/后天"
 
 
 def is_date_in_forecast_range(target_date: datetime) -> bool:
@@ -200,14 +199,14 @@ def is_date_in_forecast_range(target_date: datetime) -> bool:
     return today <= target_date <= end
 
 
-# ==================== 天气查询核心逻辑 ====================
+# ==================== 天气查询核心逻辑（返回格式化字符串） ====================
 async def query_weather_by_city_and_date(
     city: str,
     date_expr: Optional[str],
     config: dict
 ) -> Tuple[bool, str]:
     """
-    统一查询入口：根据城市和日期表达式返回天气信息字符串
+    统一查询入口：根据城市和日期表达式返回格式化的天气信息字符串
     返回 (是否成功, 结果字符串)
     """
     # 1. 解析日期
@@ -236,17 +235,16 @@ async def query_weather_by_city_and_date(
         return False, str(result)
     adcode = result
 
-    # 5. 如果是今天，可以优先使用实时天气
+    # 5. 如果是今天，可以优先使用实时天气（更即时，包含湿度）
     if date_str == today_str:
-        # 尝试实时天气
         flag, result = await weather_helper.fetch_base_weather(adcode)
         if flag:
             # 验证城市正确性
             if city not in result.get("city", "") and result.get("city") not in city:
                 return False, f"'{city}' 不是有效城市"
-            formatted = format_base_weather(result)
+            formatted = format_base_weather_detailed(result)
             return True, formatted
-        # 实时查询失败，回退到预报（可能是网络问题，但预报也可能失败，继续尝试预报）
+        # 实时查询失败，回退到预报
         logger.warning(f"实时天气查询失败，尝试预报: {result}")
 
     # 6. 使用预报查询（支持今天及未来3天）
@@ -256,94 +254,116 @@ async def query_weather_by_city_and_date(
 
     forecast_data = result  # 字典，键为日期
     if date_str not in forecast_data:
-        # 理论上不会发生，因为范围已检查
         return False, f"未找到 {date_str} 的天气数据"
 
     day_data = forecast_data[date_str]
     if city not in day_data.get("city", "") and day_data.get("city") not in city:
         return False, f"'{city}' 不是有效城市"
 
-    formatted = format_forecast_weather(day_data)
+    formatted = format_forecast_weather_detailed(day_data)
     return True, formatted
 
 
-def format_base_weather(data: dict) -> str:
+def format_base_weather_detailed(data: dict) -> str:
     """格式化实时天气"""
-    province = data.get('province')
-    city = data.get('city')
-    weather = data.get('weather')
-    temperature = data.get('temperature')
-    winddirection = data.get('winddirection')
-    windpower = data.get('windpower')
-    humidity = data.get('humidity')
-    reporttime = data.get('reporttime')
+    province = data.get('province', '')
+    city = data.get('city', '')
+    weather = data.get('weather', '未知')
+    temperature = data.get('temperature', '?')
+    winddirection = data.get('winddirection', '未知')
+    windpower = data.get('windpower', '?')
+    humidity = data.get('humidity', '?')
+    reporttime = data.get('reporttime', '')
     try:
-        reporttime = datetime.strptime(reporttime, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+        reporttime_dt = datetime.strptime(reporttime, "%Y-%m-%d %H:%M:%S")
+        reporttime_str = reporttime_dt.strftime("%Y-%m-%d %H:%M")
     except:
-        pass
-    return f"""🌆{province}{city}实时天气
-==============
-🌤️天气:{weather}
-🌡️温度:{temperature}℃
-💨风向:{winddirection}
-🌀风力:{windpower}级
-💧湿度:{humidity}%
-🕒报告时间:{reporttime}
-=============="""
+        reporttime_str = reporttime
+
+    # 生成人性化描述
+    description = f"📍 {province}{city} 的实时天气：\n"
+    description += f"🌤️ 天气状况：{weather}\n"
+    description += f"🌡️ 气温：{temperature}℃\n"
+    description += f"💨 风向：{winddirection}，风力 {windpower}级\n"
+    description += f"💧 相对湿度：{humidity}%\n"
+    
+    # 添加实用提示
+    if humidity and humidity.isdigit() and int(humidity) < 30:
+        description += "⚠️ 空气干燥，注意补水保湿。\n"
+    elif humidity and humidity.isdigit() and int(humidity) > 80:
+        description += "⚠️ 空气潮湿，注意防潮。\n"
+    
+    description += f"🕒 数据更新时间：{reporttime_str}\n"
+    description += "（数据来源：高德地图）"
+    
+    return description
 
 
-def format_forecast_weather(data: dict) -> str:
+def format_forecast_weather_detailed(data: dict) -> str:
     """格式化预报天气"""
-    province = data.get("province")
-    city = data.get("city")
-    week = data.get("week")
-    dayweather = data.get("dayweather")
-    nightweather = data.get("nightweather")
-    daytemp = data.get("daytemp")
-    nighttemp = data.get("nighttemp")
-    daywind = data.get("daywind")
-    nightwind = data.get("nightwind")
-    daypower = data.get("daypower")
-    nightpower = data.get("nightpower")
-    reporttime = data.get("reporttime")
-    date = data.get("date")
+    province = data.get("province", '')
+    city = data.get("city", '')
+    week_map = {"1":"一","2":"二","3":"三","4":"四","5":"五","6":"六","7":"日"}
+    week_num = data.get("week", "")
+    week_cn = week_map.get(week_num, week_num)
+    date = data.get("date", "")
+    
+    dayweather = data.get("dayweather", "未知")
+    nightweather = data.get("nightweather", "未知")
+    daytemp = data.get("daytemp", "?")
+    nighttemp = data.get("nighttemp", "?")
+    daywind = data.get("daywind", "未知")
+    nightwind = data.get("nightwind", "未知")
+    daypower = data.get("daypower", "?")
+    nightpower = data.get("nightpower", "?")
+    reporttime = data.get("reporttime", "")
+    
     try:
-        reporttime = datetime.strptime(reporttime, "%Y-%m-%d %H:%M:%S").strftime("%Y-%m-%d %H:%M")
+        reporttime_dt = datetime.strptime(reporttime, "%Y-%m-%d %H:%M:%S")
+        reporttime_str = reporttime_dt.strftime("%Y-%m-%d %H:%M")
     except:
-        pass
-    delta_temp = abs(int(daytemp) - int(nighttemp)) if daytemp and nighttemp else "?"
-    return f"""🌆{province}{city}天气预报
-==============
-📅日期:{date} 周{week}
-☀️日间天气:{dayweather}
-🌡️日间气温:{daytemp}℃
-💨日间风向:{daywind}
-🌀日间风速:{daypower}级
-==============
-🌙夜间天气:{nightweather}
-🌡️夜间气温:{nighttemp}℃
-💨夜间风向:{nightwind}
-🌀夜间风速:{nightpower}级
-==============
-🔥❄️温差:{delta_temp}℃
-📅报告时间:{reporttime}
-=============="""
+        reporttime_str = reporttime
+
+    # 计算温差
+    try:
+        delta = abs(int(daytemp) - int(nighttemp))
+        delta_str = f"{delta}℃"
+    except:
+        delta_str = "未知"
+
+    description = f"📍 {province}{city} {date} 周{week_cn} 天气预报：\n"
+    description += f"☀️ 白天：{dayweather}，最高气温 {daytemp}℃，{daywind}风 {daypower}级\n"
+    description += f"🌙 夜间：{nightweather}，最低气温 {nighttemp}℃，{nightwind}风 {nightpower}级\n"
+    description += f"🔥❄️ 昼夜温差：{delta_str}\n"
+    
+    # 添加建议
+    if delta_str != "未知" and delta > 10:
+        description += "⚠️ 温差较大，注意适时增减衣物。\n"
+    if "雨" in dayweather or "雨" in nightweather:
+        description += "☔ 可能有雨，出门记得带伞。\n"
+    
+    description += f"🕒 预报发布时间：{reporttime_str}\n"
+    description += "（数据来源：高德地图）"
+    
+    return description
 
 
-# ==================== Tool 定义（修正为符合框架规范）====================
+# ==================== Tool 定义 ====================
 class WeatherTool(BaseTool):
     """天气查询工具 - 供AI自然语言调用"""
 
     name = "weather_query"
-    description = "查询中国大陆城市的实时天气或未来三天天气预报。支持相对日期：今天、明天、后天，以及具体日期YYYY-MM-DD。"
+    description = """查询中国大陆城市的实时天气或未来三天天气预报。
+支持相对日期：今天、明天、后天，以及具体日期YYYY-MM-DD。
+注意：本API不支持查询昨天及更早的历史天气数据。"""
     parameters = [
         ("city", ToolParamType.STRING, "城市中文名，如：北京、上海、广州", True, None),
-        ("date", ToolParamType.STRING, "日期，可选。可以是具体日期（YYYY-MM-DD）或相对词：今天、明天、后天、昨天、前天。默认为今天。注意：昨天、前天可能超出预报范围。", False, None)
+        ("date", ToolParamType.STRING, "日期，可选。可以是具体日期（YYYY-MM-DD）或相对词：今天、明天、后天。默认为今天。", False, None)
     ]
     available_for_llm = True
 
     async def execute(self, function_args: dict[str, Any]) -> dict[str, Any]:
-        """执行天气查询，返回结果字典"""
+        """执行天气查询，返回详细描述字符串"""
         city = function_args.get("city")
         date = function_args.get("date")
 
@@ -363,7 +383,7 @@ class WeatherTool(BaseTool):
         return {"name": self.name, "content": result}
 
 
-# ==================== 命令类（复用查询逻辑） ====================
+# ==================== 命令类 ====================
 class BaseWeatherCommand(BaseCommand):
     command_name = "base_weather_command"
     command_description = "这是一个实时天气查询命令，用于查询实时天气"
@@ -424,7 +444,7 @@ class WeatherQueryPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="weather_query_plugin", description="插件名称"),
-            "version": ConfigField(type=str, default="1.2.0", description="插件版本"),  # 版本更新
+            "version": ConfigField(type=str, default="1.3.0", description="插件版本"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用本插件")
         },
         "weather": {
@@ -436,9 +456,7 @@ class WeatherQueryPlugin(BasePlugin):
 
     def get_plugin_components(self) -> List[Tuple[ComponentInfo, Type]]:
         return [
-            # 注册Tool供AI自然语言调用
             (WeatherTool.get_tool_info(), WeatherTool),
-            # 保留原有命令
             (BaseWeatherCommand.get_command_info(), BaseWeatherCommand),
             (ForecastWeatherCommand.get_command_info(), ForecastWeatherCommand),
         ]
